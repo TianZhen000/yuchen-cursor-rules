@@ -78,10 +78,7 @@ alwaysApply: false
 
 ### 1. 命名规范
 
-**类名**：大驼峰（UserService、OrderController）
-**方法名/变量名**：小驼峰（getUserById、orderList）
-**常量**：全大写+下划线（MAX_RETRY_COUNT、DEFAULT_PAGE_SIZE）
-**包名**：全小写（com.project.user.service）
+遵循阿里巴巴Java开发手册命名规范：类名使用大驼峰，方法名和变量名使用小驼峰，常量使用全大写+下划线，包名使用全小写
 
 ### 2. 分层规范
 
@@ -100,26 +97,7 @@ com.project
 
 ### 3. 注释规范
 
-**类注释**：
-```java
-/**
- * 用户服务接口
- * 
- * @author yourname
- * @date 2024-01-01
- */
- ```
-**方法注释**：
-```java
-/**
- * 根据用户ID获取用户信息
- * 
- * @param userId 用户ID
- * @return 用户信息
- * @throws BusinessException 用户不存在时抛出
- */
-```
-**复杂逻辑注释**：关键业务逻辑必须注释说明
+遵循JavaDoc规范，类注释包含类说明、作者、日期；方法注释包含方法说明、参数说明、返回值说明、异常说明；关键业务逻辑必须添加注释说明
 
 ### 4. 设计模式使用场景
 
@@ -130,155 +108,22 @@ com.project
 **责任链模式**：多级处理（如审批流程、参数校验） 
 **观察者模式**：事件通知（如订单状态变更通知）
 
-## 🔧 核心代码模板
+## 🔧 核心代码规范
 
-### 1. Controller层模板
+### 1. Controller层规范
+遵循Spring Boot RESTful规范，使用@RestController、@RequestMapping、@Api等注解，接口方法使用@Valid进行参数校验，返回统一响应结构Result<T>，参考Knife4j文档规范
 
-```java
-@RestController
-@RequestMapping("/api/v1/user")
-@Api(tags = "用户管理")
-public class UserController {
-    
-    @Autowired
-    private UserService userService;
-    
-    @PostMapping("/register")
-    @ApiOperation("用户注册")
-    public Result<Long> register(@Valid @RequestBody UserRegisterDTO dto) {
-        Long userId = userService.register(dto);
-        return Result.success(userId);
-    }
-    
-    @GetMapping("/{id}")
-    @ApiOperation("获取用户信息")
-    public Result<UserVO> getUserById(@PathVariable Long id) {
-        UserVO userVO = userService.getUserById(id);
-        return Result.success(userVO);
-    }
-}
-```
+### 2. Service层规范
+遵循Spring事务管理规范，使用@Transactional(rollbackFor = Exception.class)确保事务回滚，业务逻辑按"参数校验→业务处理→数据持久化"顺序实现，关键操作记录日志
 
-### 1. Service层模板
-
-```java
-@Service
-@Slf4j
-public class UserServiceImpl implements UserService {
-    
-    @Autowired
-    private UserMapper userMapper;
-    
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public Long register(UserRegisterDTO dto) {
-        // 1. 参数校验
-        checkUsername(dto.getUsername());
-        
-        // 2. 业务逻辑
-        User user = new User();
-        BeanUtils.copyProperties(dto, user);
-        user.setPassword(encryptPassword(dto.getPassword()));
-        
-        // 3. 数据持久化
-        userMapper.insert(user);
-        
-        log.info("用户注册成功, userId={}", user.getId());
-        return user.getId();
-    }
-    
-    private void checkUsername(String username) {
-        User existUser = userMapper.selectOne(
-            new LambdaQueryWrapper<User>()
-                .eq(User::getUsername, username)
-        );
-        if (existUser != null) {
-            throw new BusinessException(ErrorCode.USERNAME_EXISTS);
-        }
-    }
-}
-```
 ### 3. 统一响应结构
-
-```java
-@Data
-public class Result<T> {
-    private Integer code;
-    private String message;
-    private T data;
-    private Long timestamp;
-    
-    public static <T> Result<T> success(T data) {
-        Result<T> result = new Result<>();
-        result.setCode(200);
-        result.setMessage("success");
-        result.setData(data);
-        result.setTimestamp(System.currentTimeMillis());
-        return result;
-    }
-    
-    public static <T> Result<T> error(Integer code, String message) {
-        Result<T> result = new Result<>();
-        result.setCode(code);
-        result.setMessage(message);
-        result.setTimestamp(System.currentTimeMillis());
-        return result;
-    }
-}
-```
+实现统一响应类Result<T>，包含code、message、data、timestamp字段，提供success和error静态方法，遵循接口文档定义的响应格式
 
 ### 4. 全局异常处理
-
-```java
-@RestControllerAdvice
-@Slf4j
-public class GlobalExceptionHandler {
-    
-    @ExceptionHandler(BusinessException.class)
-    public Result<?> handleBusinessException(BusinessException e) {
-        log.warn("业务异常: {}", e.getMessage());
-        return Result.error(e.getCode(), e.getMessage());
-    }
-    
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public Result<?> handleValidException(MethodArgumentNotValidException e) {
-        String message = e.getBindingResult().getFieldError().getDefaultMessage();
-        log.warn("参数校验失败: {}", message);
-        return Result.error(400, message);
-    }
-    
-    @ExceptionHandler(Exception.class)
-    public Result<?> handleException(Exception e) {
-        log.error("系统异常", e);
-        return Result.error(500, "系统内部错误");
-    }
-}
-```
+使用@RestControllerAdvice实现全局异常拦截，分别处理业务异常（BusinessException）、参数校验异常（MethodArgumentNotValidException）、系统异常（Exception），返回统一响应格式
 
 ### 5. 自定义业务异常
-
-```java
-@Data
-public class BusinessException extends RuntimeException {
-    private Integer code;
-    private String message;
-    
-    public BusinessException(ErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.code = errorCode.getCode();
-        this.message = errorCode.getMessage();
-    }
-}
-
-public enum ErrorCode {
-    USERNAME_EXISTS(10001, "用户名已存在"),
-    USER_NOT_FOUND(10002, "用户不存在"),
-    PASSWORD_ERROR(10003, "密码错误");
-    
-    private final Integer code;
-    private final String message;
-}
-```
+定义BusinessException继承RuntimeException，使用ErrorCode枚举管理错误码和错误信息，遵循错误码规范（200/400/401/403/500为HTTP标准码，10001-99999为业务码）
 
 ---
 
@@ -327,88 +172,12 @@ public enum ErrorCode {
 
 ---
 
-## 📚 快速参考：常见场景的代码模式
+## 📚 快速参考：常见场景的开发要点
 
-**分页查询**：
-```java
-public PageResult<UserVO> pageQuery(UserPageDTO dto) {
-    Page<User> page = new Page<>(dto.getPageNum(), dto.getPageSize());
-    LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-    // 添加查询条件
-    if (StringUtils.isNotBlank(dto.getUsername())) {
-        wrapper.like(User::getUsername, dto.getUsername());
-    }
-    Page<User> userPage = userMapper.selectPage(page, wrapper);
-    return PageResult.of(userPage, UserVO.class);
-}
-```
-**缓存处理**：
-```java
-public UserVO getUserById(Long id) {
-    // 先查缓存
-    String cacheKey = "user:" + id;
-    UserVO userVO = redisTemplate.opsForValue().get(cacheKey);
-    if (userVO != null) {
-        return userVO;
-    }
-    // 缓存未命中，查数据库
-    User user = userMapper.selectById(id);
-    if (user == null) {
-        throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-    }
-    userVO = BeanUtil.copyProperties(user, UserVO.class);
-    // 写入缓存
-    redisTemplate.opsForValue().set(cacheKey, userVO, 1, TimeUnit.HOURS);
-    return userVO;
-}
-```
-**事务处理**：
-```java
-@Transactional(rollbackFor = Exception.class)
-public void createOrder(OrderCreateDTO dto) {
-    // 1. 创建订单
-    Order order = new Order();
-    // ... 设置订单属性
-    orderMapper.insert(order);
-    
-    // 2. 扣减库存
-    boolean success = goodsService.deductStock(dto.getGoodsId(), dto.getQuantity());
-    if (!success) {
-        throw new BusinessException(ErrorCode.STOCK_NOT_ENOUGH);
-    }
-    
-    // 3. 记录日志
-    orderLogService.log(order.getId(), "订单创建成功");
-}
-```
-**异步处理（消息队列）**：
-```java
-@Service
-public class OrderServiceImpl implements OrderService {
-    
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
-    
-    public void createOrder(OrderCreateDTO dto) {
-        // 创建订单
-        Order order = saveOrder(dto);
-        
-        // 发送异步消息
-        OrderMessage message = new OrderMessage();
-        message.setOrderId(order.getId());
-        rabbitTemplate.convertAndSend("order.exchange", "order.create", message);
-    }
-}
+**分页查询**：使用MyBatis-Plus的Page和LambdaQueryWrapper，动态构建查询条件，返回PageResult统一分页响应结构
 
-@Component
-@RabbitListener(queues = "order.queue")
-public class OrderMessageListener {
-    
-    @RabbitHandler
-    public void handleOrderCreate(OrderMessage message) {
-        // 处理订单创建后的异步任务
-        // 如：发送通知、更新统计等
-        log.info("处理订单创建消息: {}", message.getOrderId());
-    }
-}
-```
+**缓存处理**：遵循Cache Aside模式，先查缓存再查数据库，缓存未命中时查询数据库并写入缓存，设置合理的过期时间
+
+**事务处理**：多表操作或关键业务使用@Transactional，设置rollbackFor = Exception.class确保异常回滚，避免长事务
+
+**异步处理**：使用消息队列（RabbitMQ/RocketMQ）实现异步解耦，生产者发送消息，消费者监听队列处理，确保消息可靠性
