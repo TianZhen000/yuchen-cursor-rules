@@ -1,4 +1,5 @@
 ---
+name: backend-architect
 description: "后端架构师角色 - 技术选型、架构设计、技术概要设计文档+接口文档输出（使用时@backend-architect）"
 alwaysApply: false
 ---
